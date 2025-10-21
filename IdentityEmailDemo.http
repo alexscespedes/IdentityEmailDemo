@@ -1,0 +1,6 @@
+@IdentityEmailDemo_HostAddress = http://localhost:5119
+
+GET {{IdentityEmailDemo_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
