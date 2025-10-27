@@ -25,8 +25,8 @@ public class EmailService : IEmailService
         };
 
         using var smtp = new SmtpClient();
-        await smtp.ConnectAsync(_config["EmailSettings:SmtpServer"], int.Parse(_config["EmailSettings:Port"]!), MailKit.Security.SecureSocketOptions.StartTls);
-        await smtp.AuthenticateAsync(_config["EmailSettings:Username"], _config["EmailSettings:Password"]);
+        await smtp.ConnectAsync(_config["EmailSettings:SmtpServer"], int.Parse(_config["EmailSettings:Port"]!), MailKit.Security.SecureSocketOptions.None);
+        // await smtp.AuthenticateAsync(_config["EmailSettings:Username"], _config["EmailSettings:Password"]);
         await smtp.SendAsync(email);
         await smtp.DisconnectAsync(true);
     }

@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Net;
 using System.Security.Claims;
 using System.Text;
 using IdentityEmailDemo.DTOs;
@@ -65,7 +66,7 @@ namespace IdentityEmailDemo.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginDto model)
         {
-            var user = await _userManager.FindByEmailAsync(model.Username)
+            var user = await _userManager.FindByNameAsync(model.Username)
                 ?? await _userManager.FindByEmailAsync(model.Username);
 
             if (user == null)
@@ -117,7 +118,9 @@ namespace IdentityEmailDemo.Controllers
             if (user == null)
                 return BadRequest("Invalid user.");
 
-            var result = await _userManager.ResetPasswordAsync(user, model.Token, model.NewPassword);
+            var decodedToken = WebUtility.UrlDecode(model.Token);
+
+            var result = await _userManager.ResetPasswordAsync(user, decodedToken, model.NewPassword);
 
             if (!result.Succeeded)
                 return BadRequest(result.Errors);
