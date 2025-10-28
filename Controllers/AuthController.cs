@@ -4,7 +4,9 @@ using System.Security.Claims;
 using System.Text;
 using IdentityEmailDemo.DTOs;
 using IdentityEmailDemo.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 
@@ -72,12 +74,27 @@ namespace IdentityEmailDemo.Controllers
             if (user == null)
                 return Unauthorized("Invalid credentials.");
 
+            if (await _userManager.IsLockedOutAsync(user))
+                return Unauthorized("Account locked due to multiple failed login attempts. Please try again later.");
+
+            if (!await _userManager.CheckPasswordAsync(user, model.Password))
+            {
+                await _userManager.AccessFailedAsync(user);
+                return Unauthorized("Invalid username or password");
+            }
+
+            await _userManager.ResetAccessFailedCountAsync(user);
+
             if (!await _userManager.IsEmailConfirmedAsync(user))
                 return Unauthorized("Email not confirmed. Please check your inbox to verify your account.");
 
-            if (!await _userManager.CheckPasswordAsync(user, model.Password))
-                return Unauthorized("Invalid username or password");
-
+            if (await _userManager.GetTwoFactorEnabledAsync(user))
+                return Ok(new
+                {
+                    TwoFactorRequired = true,
+                    user.Email
+                });
+                
             var roles = await _userManager.GetRolesAsync(user);
 
             var token = GenerateJwtToken(user, roles);
@@ -126,6 +143,83 @@ namespace IdentityEmailDemo.Controllers
                 return BadRequest(result.Errors);
 
             return Ok("Password has been reset successfully.");
+        }
+
+        [HttpPost("send-2fa-code")]
+        public async Task<IActionResult> SendTwoFactor([FromBody] TwoFactorRequestDto model)
+        {
+            var user = await _userManager.FindByEmailAsync(model.Email);
+            if (user == null)
+                return BadRequest("Invalid email.");
+
+            var token = await _userManager.GenerateTwoFactorTokenAsync(user, TokenOptions.DefaultEmailProvider);
+            await _emailService.SendEmailAsync(user.Email!, "Your 2FA Code", $"Your verification code is: <b>{token}</b>");
+
+            return Ok("2FA code sent to your email.");
+        }
+
+        [HttpPost("verify-2fa-code")]
+        public async Task<IActionResult> VerifyTwoFactorCode([FromBody] TwoFactorVerifyDto model)
+        {
+            var user = await _userManager.FindByEmailAsync(model.Email);
+            if (user == null)
+                return BadRequest("Invalid user.");
+
+            var isValid = await _userManager.VerifyTwoFactorTokenAsync(user, TokenOptions.DefaultEmailProvider, model.Code);
+            if (!isValid)
+                return Unauthorized("Invalid verification code.");
+
+            var roles = await _userManager.GetRolesAsync(user);
+            var token = GenerateJwtToken(user, roles);
+
+            return Ok(new
+            {
+                message = "2FA Code successfully verified.",
+                token,
+                user = new
+                {
+                    user.UserName,
+                    user.Email,
+                    Roles = roles
+                }
+            });
+        }
+
+        [Authorize]
+        public async Task<IActionResult> EnableTwoFactor()
+        {
+            var user = await _userManager.GetUserAsync(User);
+            if (user == null)
+                return Unauthorized();
+
+            await _userManager.SetTwoFactorEnabledAsync(user, true);
+            return Ok("Two-factor authentication enabled.");
+        }
+
+        [Authorize]
+        public async Task<IActionResult> DisableTwoFactor()
+        {
+            var user = await _userManager.GetUserAsync(User);
+            if (user == null)
+                return Unauthorized();
+
+            await _userManager.SetTwoFactorEnabledAsync(user, false);
+            return Ok("Two-factor authentication disabled.");
+        }
+
+        [Authorize]
+        [HttpPost("generate-recovery-codes")]
+        public async Task<IActionResult> GenerateRecoveryCodes()
+        {
+            var user = await _userManager.GetUserAsync(User);
+            if (user == null)
+                return Unauthorized();
+
+            var codes = await _userManager.GenerateNewTwoFactorRecoveryCodesAsync(user, 5);
+            return Ok(new
+            {
+                RecoveryCodes = codes
+            });
         }
 
         private string GenerateJwtToken(IdentityUser user, IList<string> roles)
